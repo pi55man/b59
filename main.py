@@ -1,30 +1,25 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk, simpledialog
-
-from PIL import Image, ImageTk, ImageEnhance, ImageFilter, ImageDraw, ImageFont
-
+from tkinter import filedialog, messagebox, ttk
+from PIL import Image, ImageTk, ImageEnhance, ImageFilter, ImageDraw
 import numpy as np
-import cv2
-import os
-import threading
 
 class PhotoEditor:
     def __init__(self, root):
         self.root = root
-        self.root.title("Ultimate Photo Editor")
-        self.root.geometry("1200x700")
+        self.root.title("Photo Editor")
+        self.root.geometry("1920x1080")
         self.root.config(bg="#2C3E50")
 
         # Initialize main variables
         self.image_path = None
         self.original_image = None
         self.processed_image = None
-        self.layers = []
-        self.undo_stack = []
-        self.redo_stack = []
-        self.draw_mode = False
-        self.draw_color = "black"
-        self.draw_size = 5
+        self.zoom_scale = 1.0
+        self.applied_adjustment = None
+        self.applied_filter = None
+        self.applied_fun_filter = None
+        self.crop_rectangle = None
+        self.temp_image = None
 
         # GUI setup
         self.setup_gui()
@@ -33,18 +28,12 @@ class PhotoEditor:
         # Toolbar for essential buttons
         toolbar = tk.Frame(self.root, bg="#1C2833")
         toolbar.pack(side=tk.TOP, fill="x")
-        
+
         load_btn = ttk.Button(toolbar, text="Load Image", command=self.load_image)
         load_btn.pack(side=tk.LEFT, padx=5, pady=5)
-        
+
         save_btn = ttk.Button(toolbar, text="Save Image", command=self.save_image)
         save_btn.pack(side=tk.LEFT, padx=5, pady=5)
-
-        undo_btn = ttk.Button(toolbar, text="Undo", command=self.undo)
-        undo_btn.pack(side=tk.LEFT, padx=5, pady=5)
-
-        redo_btn = ttk.Button(toolbar, text="Redo", command=self.redo)
-        redo_btn.pack(side=tk.LEFT, padx=5, pady=5)
 
         # Sidebar for adjustments
         sidebar = tk.Frame(self.root, bg="#1C2833", width=200)
@@ -64,22 +53,33 @@ class PhotoEditor:
         self.create_filter_button(sidebar, "Vivid", self.apply_vivid)
         self.create_filter_button(sidebar, "Cool", self.apply_cool)
 
-        # Toggle Dark/Light Theme
-        theme_btn = ttk.Button(sidebar, text="Toggle Theme", command=self.toggle_theme)
-        theme_btn.pack(fill="x", padx=10, pady=5)
+        # Fun Filters
+        tk.Label(sidebar, text="Miscellaneous", bg="#1C2833", fg="white", font=("Arial", 12, "bold")).pack(pady=10)
+        self.create_filter_button(sidebar, "Wave", self.apply_wave)
+        self.create_filter_button(sidebar, "Pixelate", self.apply_pixelate)
+
+        # Remove all filters button
+        remove_filters_btn = ttk.Button(sidebar, text="Remove All Filters", command=self.remove_all_filters)
+        remove_filters_btn.pack(fill="x", padx=10, pady=5)
+
+        # Cropping Button
+        crop_btn = ttk.Button(sidebar, text="Crop", command=self.enable_crop)
+        crop_btn.pack(fill="x", padx=10, pady=5)
+
+        # Zoom Controls
+        zoom_in_btn = ttk.Button(sidebar, text="Zoom In", command=self.zoom_in)
+        zoom_in_btn.pack(fill="x", padx=10, pady=5)
+        zoom_out_btn = ttk.Button(sidebar, text="Zoom Out", command=self.zoom_out)
+        zoom_out_btn.pack(fill="x", padx=10, pady=5)
 
         # Display Area
         self.image_label = tk.Label(self.root, bg="#34495E")
         self.image_label.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Drawing Mode Toggle
-        self.draw_btn = ttk.Button(sidebar, text="Draw", command=self.toggle_draw)
-        self.draw_btn.pack(fill="x", padx=10, pady=5)
-
     def create_adjustment_slider(self, frame, label, command):
         lbl = tk.Label(frame, text=label, bg="#1C2833", fg="white")
         lbl.pack(anchor="w", padx=10)
-        
+
         slider = ttk.Scale(frame, from_=0.5, to=2.0, orient="horizontal", command=command)
         slider.set(1.0)
         slider.pack(fill="x", padx=10, pady=5)
@@ -92,6 +92,7 @@ class PhotoEditor:
         self.image_path = filedialog.askopenfilename(filetypes=[("Image Files", ".png;.jpg;*.jpeg")])
         if self.image_path:
             self.original_image = Image.open(self.image_path)
+            self.processed_image = self.original_image.copy()
             self.display_image(self.original_image)
 
     def save_image(self):
@@ -102,109 +103,187 @@ class PhotoEditor:
                 messagebox.showinfo("Image Saved", "Your image has been saved successfully!")
 
     def display_image(self, img):
-        img.thumbnail((700, 500))
-        self.processed_image = img
+        img = img.resize((int(img.width * self.zoom_scale), int(img.height * self.zoom_scale)), Image.LANCZOS)
         imgtk = ImageTk.PhotoImage(img)
         self.image_label.config(image=imgtk)
+        self.image_label.image = imgtk  # Keep a reference to avoid garbage collection
 
-    def add_layer(self, img):
-        self.layers.append(img)
-        self.undo_stack.append(img.copy())
-
-    def undo(self):
-        if self.undo_stack:
-            self.redo_stack.append(self.undo_stack.pop())
-            if self.undo_stack:
-                self.display_image(self.undo_stack[-1])
-
-    def redo(self):
-        if self.redo_stack:
-            self.undo_stack.append(self.redo_stack.pop())
-            self.display_image(self.undo_stack[-1])
-
+    # Adjustment Functions
     def adjust_brightness(self, value):
         if self.original_image:
             enhancer = ImageEnhance.Brightness(self.original_image)
             img = enhancer.enhance(float(value))
-            self.display_image(img)
-            self.add_layer(img)
+            self.applied_adjustment = lambda img: ImageEnhance.Brightness(img).enhance(float(value))
+            self.apply_filters()
 
     def adjust_contrast(self, value):
         if self.original_image:
             enhancer = ImageEnhance.Contrast(self.original_image)
             img = enhancer.enhance(float(value))
-            self.display_image(img)
-            self.add_layer(img)
+            self.applied_adjustment = lambda img: ImageEnhance.Contrast(img).enhance(float(value))
+            self.apply_filters()
 
     def adjust_saturation(self, value):
         if self.original_image:
             enhancer = ImageEnhance.Color(self.original_image)
             img = enhancer.enhance(float(value))
-            self.display_image(img)
-            self.add_layer(img)
+            self.applied_adjustment = lambda img: ImageEnhance.Color(img).enhance(float(value))
+            self.apply_filters()
 
     def adjust_sharpness(self, value):
         if self.original_image:
             enhancer = ImageEnhance.Sharpness(self.original_image)
             img = enhancer.enhance(float(value))
-            self.display_image(img)
-            self.add_layer(img)
+            self.applied_adjustment = lambda img: ImageEnhance.Sharpness(img).enhance(float(value))
+            self.apply_filters()
 
+    # Filter Functions
     def apply_hdr(self):
         if self.original_image:
             img = self.original_image.filter(ImageFilter.DETAIL)
-            self.display_image(img)
-            self.add_layer(img)
+            self.applied_filter = lambda img: img.filter(ImageFilter.DETAIL)
+            self.apply_filters()
 
     def apply_vintage(self):
         if self.original_image:
             sepia = ImageEnhance.Color(self.original_image).enhance(0.3)
-            self.display_image(sepia)
-            self.add_layer(sepia)
+            self.applied_filter = lambda img: ImageEnhance.Color(img).enhance(0.3)
+            self.apply_filters()
 
     def apply_black_white(self):
         if self.original_image:
             bw_image = self.original_image.convert("L")
-            self.display_image(bw_image)
-            self.add_layer(bw_image)
+            self.applied_filter = lambda img: img.convert("L")
+            self.apply_filters()
 
     def apply_vivid(self):
         if self.original_image:
             vivid_image = ImageEnhance.Color(self.original_image).enhance(1.5)
-            self.display_image(vivid_image)
-            self.add_layer(vivid_image)
+            self.applied_filter = lambda img: ImageEnhance.Color(img).enhance(1.5)
+            self.apply_filters()
 
     def apply_cool(self):
         if self.original_image:
             cool_image = self.original_image.filter(ImageFilter.EDGE_ENHANCE_MORE)
-            self.display_image(cool_image)
-            self.add_layer(cool_image)
+            self.applied_filter = lambda img: img.filter(ImageFilter.EDGE_ENHANCE_MORE)
+            self.apply_filters()
 
-    def toggle_theme(self):
-        current_bg = self.root.cget('bg')
-        if current_bg == "#2C3E50":
-            self.root.config(bg="#ECF0F1")
-            self.image_label.config(bg="#ECF0F1")
-        else:
-            self.root.config(bg="#2C3E50")
-            self.image_label.config(bg="#34495E")
+    # Fun Filter Functions
+    def apply_wave(self):
+        if self.original_image:
+            self.applied_fun_filter = lambda img: self.wave_filter(img)
+            self.apply_filters()
 
-    def toggle_draw(self):
-        self.draw_mode = not self.draw_mode
-        self.draw_btn.config(text="Draw" if not self.draw_mode else "Stop Drawing")
-        if self.draw_mode:
-            self.root.bind("<B1-Motion>", self.draw)
-        else:
-            self.root.unbind("<B1-Motion>")
+    def apply_pixelate(self):
+        if self.original_image:
+            self.applied_fun_filter = lambda img: self.pixelate_filter(img)
+            self.apply_filters()
 
-    def draw(self, event):
-        if self.draw_mode and self.processed_image:
-            draw = ImageDraw.Draw(self.processed_image)
-            draw.line([(event.x, event.y), (event.x + self.draw_size, event.y + self.draw_size)], fill=self.draw_color, width=self.draw_size)
+    # Fun Filters Implementations
+    def wave_filter(self, img):
+        img = np.array(img)
+        height, width = img.shape[:2]
+        amplitude = 10
+        frequency = 20
+
+        for y in range(height):
+            offset = int(amplitude * np.sin(2 * np.pi * y / frequency))
+            img[y] = np.roll(img[y], offset, axis=0)
+        return Image.fromarray(img)
+
+    def pixelate_filter(self, img):
+        pixel_size = 10
+        img = img.resize(
+            (img.width // pixel_size, img.height // pixel_size),
+            Image.NEAREST
+        )
+        img = img.resize(
+            (img.width * pixel_size, img.height * pixel_size),
+            Image.NEAREST
+        )
+        return img
+
+    # Apply all filters cumulatively
+    def apply_filters(self):
+        if self.original_image:
+            img = self.original_image
+
+            # Apply adjustment filters first (if any)
+            if self.applied_adjustment:
+                img = self.applied_adjustment(img)
+
+            # Apply regular filters (if any)
+            if self.applied_filter:
+                img = self.applied_filter(img)
+
+            # Apply fun filters last (if any)
+            if self.applied_fun_filter:
+                img = self.applied_fun_filter(img)
+
+            self.processed_image = img
             self.display_image(self.processed_image)
 
-root = tk.Tk()
-app = PhotoEditor(root)
-root.mainloop()
+    def remove_all_filters(self):
+        self.applied_adjustment = None
+        self.applied_filter = None
+        self.applied_fun_filter = None
+        self.processed_image = self.original_image.copy()
+        self.display_image(self.processed_image)
 
+    # Crop Functions
+    def enable_crop(self):
+        self.crop_rectangle = None
+        self.temp_image = self.processed_image.copy()
+        self.image_label.bind("<ButtonPress-1>", self.start_crop)
+        self.image_label.bind("<B1-Motion>", self.update_crop)
+        self.image_label.bind("<ButtonRelease-1>", self.finish_crop)
 
+    def start_crop(self, event):
+        x = int(event.x / self.zoom_scale)
+        y = int(event.y / self.zoom_scale)
+        self.crop_rectangle = [x, y, x, y]
+
+    def update_crop(self, event):
+        if self.crop_rectangle:
+            self.crop_rectangle[2] = int(event.x / self.zoom_scale)
+            self.crop_rectangle[3] = int(event.y / self.zoom_scale)
+            self.display_crop_rectangle()
+
+    def finish_crop(self, event):
+        if self.crop_rectangle and self.processed_image:
+            x1, y1, x2, y2 = self.crop_rectangle
+            x1, x2 = sorted([x1, x2])
+            y1, y2 = sorted([y1, y2])
+            
+            if x2 > x1 and y2 > y1:
+                cropped_image = self.processed_image.crop((x1, y1, x2, y2))
+                self.processed_image = cropped_image
+                self.display_image(cropped_image)
+            
+            # Unbind cropping events
+            self.image_label.unbind("<ButtonPress-1>")
+            self.image_label.unbind("<B1-Motion>")
+            self.image_label.unbind("<ButtonRelease-1>")
+            self.crop_rectangle = None
+
+    def display_crop_rectangle(self):
+        if self.crop_rectangle and self.temp_image:
+            img_copy = self.temp_image.copy()
+            draw = ImageDraw.Draw(img_copy)
+            x1, y1, x2, y2 = self.crop_rectangle
+            draw.rectangle([x1 * self.zoom_scale, y1 * self.zoom_scale, x2 * self.zoom_scale, y2 * self.zoom_scale], outline="red", width=2)
+            self.display_image(img_copy)
+
+    # Zoom Functions
+    def zoom_in(self):
+        self.zoom_scale *= 1.2
+        self.display_image(self.processed_image)
+
+    def zoom_out(self):
+        self.zoom_scale /= 1.2
+        self.display_image(self.processed_image)
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = PhotoEditor(root)
+    root.mainloop()
