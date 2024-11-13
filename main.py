@@ -8,7 +8,7 @@ class PhotoEditor:
         self.root = root
         self.root.title("Photo Editor")
         self.root.geometry("1920x1080")
-        self.root.config(bg="#49393B")
+        self.root.config(bg="#323434")
 
         self.image_path = None
         self.original_image = None
@@ -24,7 +24,7 @@ class PhotoEditor:
         self.setup_gui()
 
     def setup_gui(self):
-        toolbar = tk.Frame(self.root, bg="#49393B")
+        toolbar = tk.Frame(self.root, bg="#323434")
         toolbar.pack(side=tk.TOP, fill="x")
 
         load_btn = ttk.Button(toolbar, text="Load Image", command=self.load_image)
@@ -33,10 +33,10 @@ class PhotoEditor:
         save_btn = ttk.Button(toolbar, text="Save Image", command=self.save_image)
         save_btn.pack(side=tk.LEFT, padx=5, pady=5)
 
-        sidebar = tk.Frame(self.root, bg="#49393B", width=150)
+        sidebar = tk.Frame(self.root, bg="#323434", width=150)
         sidebar.pack(side=tk.LEFT, fill="y")
 
-        tk.Label(sidebar, text="Adjustments", bg="#49393B", fg="white", font=("Arial", 12, "bold")).pack(pady=10)
+        tk.Label(sidebar, text="Adjustments", bg="#323434", fg="white", font=("Arial", 12, "bold")).pack(pady=10)
         self.create_adjustment_slider(sidebar, "Brightness", self.adjust_brightness)
         self.create_adjustment_slider(sidebar, "Contrast", self.adjust_contrast)
         self.create_adjustment_slider(sidebar, "Saturation", self.adjust_saturation)
@@ -46,7 +46,7 @@ class PhotoEditor:
         remove_adjustments_btn.pack(fill="x", padx=10, pady=5)
         
 
-        tk.Label(sidebar, text="Filters", bg="#49393B", fg="white", font=("Arial", 12, "bold")).pack(pady=10)
+        tk.Label(sidebar, text="Filters", bg="#323434", fg="white", font=("Arial", 12, "bold")).pack(pady=10)
         self.create_filter_button(sidebar, "HDR", self.apply_hdr)
         self.create_filter_button(sidebar, "Vintage", self.apply_vintage)
         self.create_filter_button(sidebar, "B&W", self.apply_black_white)
@@ -57,7 +57,7 @@ class PhotoEditor:
         remove_filters_btn = ttk.Button(sidebar, text="Remove Regular Filters", command=self.remove_regular_filters)
         remove_filters_btn.pack(fill="x", padx=10, pady=5)
         
-        tk.Label(sidebar, text="Miscellaneous", bg="#49393B", fg="white", font=("Arial", 12, "bold")).pack(pady=10)
+        tk.Label(sidebar, text="Miscellaneous", bg="#323434", fg="white", font=("Arial", 12, "bold")).pack(pady=10)
         self.create_filter_button(sidebar, "Wave", self.apply_wave)
         self.create_filter_button(sidebar, "Pixelate", self.apply_pixelate)
         remove_fun_filters_btn = ttk.Button(sidebar, text="Remove Fun Filters", command=self.remove_fun_filters)
@@ -72,16 +72,17 @@ class PhotoEditor:
         zoom_out_btn = ttk.Button(sidebar, text="Zoom Out", command=self.zoom_out)
         zoom_out_btn.pack(fill="x", padx=10, pady=5)
 
-        rotate_left_btn = ttk.Button(sidebar, text="Rotate Left", command=lambda: self.rotate_image(90))
-        rotate_left_btn.pack(fill="x", padx=10, pady=5)
+        #TODO LATER
+        # rotate_left_btn = ttk.Button(sidebar, text="Rotate Left", command=lambda: self.rotate_image(90))
+        # rotate_left_btn.pack(fill="x", padx=10, pady=5)
     
-        rotate_right_btn = ttk.Button(sidebar, text="Rotate Right", command=lambda: self.rotate_image(-90))
-        rotate_right_btn.pack(fill="x", padx=10, pady=5)
+        # rotate_right_btn = ttk.Button(sidebar, text="Rotate Right", command=lambda: self.rotate_image(-90))
+        # rotate_right_btn.pack(fill="x", padx=10, pady=5)
 
         remove_filters_btn = ttk.Button(sidebar, text="Remove All Filters", command=self.remove_all_filters)
         remove_filters_btn.pack(fill="x", padx=10, pady=5)
         
-        self.image_label = tk.Label(self.root, bg="#4B644A")
+        self.image_label = tk.Label(self.root, bg="#000000")
         self.image_label.pack(fill="both", expand=True, padx=10, pady=10)
 
     def create_adjustment_slider(self, frame, label, command):
@@ -184,9 +185,11 @@ class PhotoEditor:
         if self.original_image:
             self.current_angle = (self.current_angle + direction) % 360
             rotated_image = self.original_image.rotate(self.current_angle, expand=True)
+            
             self.processed_image = rotated_image
             self.display_image(rotated_image)
-
+            self.apply_filters()  
+    
     def apply_wave(self):
         if self.original_image:
             self.applied_fun_filter = lambda img: self.wave_filter(img)
@@ -253,53 +256,46 @@ class PhotoEditor:
     
     def enable_crop(self):
         self.crop_rectangle = None
-        self.temp_image = self.processed_image.copy()  # Temporary copy for drawing
-        # Bind mouse events for cropping
+        self.temp_image = self.processed_image.copy()  
         self.image_label.bind("<ButtonPress-1>", self.start_crop)
         self.image_label.bind("<B1-Motion>", self.update_crop)
         self.image_label.bind("<ButtonRelease-1>", self.finish_crop)
 
     def start_crop(self, event):
-        # Set the starting point of the crop rectangle to the mouse position
         x = int(event.x / self.zoom_scale)
         y = int(event.y / self.zoom_scale)
-        self.crop_rectangle = [x, y, x, y]  # Initialize the crop rectangle with the starting point
+        self.crop_rectangle = [x, y, x, y]  
 
     def update_crop(self, event):
-        # Update the crop rectangle as the mouse moves
         if self.crop_rectangle:
             self.crop_rectangle[2] = int(event.x / self.zoom_scale)
             self.crop_rectangle[3] = int(event.y / self.zoom_scale)
-            self.display_crop_rectangle()  # Display the updated rectangle
+            self.display_crop_rectangle() 
 
     def finish_crop(self, event):
-        # Finalize cropping and apply the crop to the processed image
         if self.crop_rectangle and self.processed_image:
             x1, y1, x2, y2 = self.crop_rectangle
             x1, x2 = sorted([x1, x2])
             y1, y2 = sorted([y1, y2])
             
-            # Ensure we have a valid crop region
             if x2 > x1 and y2 > y1:
                 cropped_image = self.processed_image.crop((x1, y1, x2, y2))
                 self.processed_image = cropped_image
                 self.display_image(cropped_image)
             
-            # Unbind cropping events and reset crop_rectangle
             self.image_label.unbind("<ButtonPress-1>")
             self.image_label.unbind("<B1-Motion>")
             self.image_label.unbind("<ButtonRelease-1>")
             self.crop_rectangle = None
 
     def display_crop_rectangle(self):
-        # Display a temporary image with the crop rectangle drawn on it
+        
         if self.crop_rectangle and self.temp_image:
             img_copy = self.temp_image.copy()
             draw = ImageDraw.Draw(img_copy)
             x1, y1, x2, y2 = self.crop_rectangle
-            # Draw rectangle adjusted for zoom scale
             draw.rectangle([x1 * self.zoom_scale, y1 * self.zoom_scale, x2 * self.zoom_scale, y2 * self.zoom_scale], outline="red", width=2)
-            self.display_image(img_copy)  # Display the updated image with the rectangle
+            self.display_image(img_copy)  
 
     def zoom_in(self):
         self.zoom_scale *= 1.2
